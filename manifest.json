@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Project Spellbook",
+  "version": "1.0.0",
+  "description": "Enhance the UI of D&D Beyond character tool",
+  "permissions": [
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "*://dndbeyond.com/*",
+    "*://www.dndbeyond.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Project Spellbook"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://dndbeyond.com/*",
+        "*://www.dndbeyond.com/*"
+      ],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ],
+  "icons": {
+    "16": "images/icon-16.png",
+    "48": "images/icon-48.png",
+    "128": "images/icon-128.png"
+  }
+}
