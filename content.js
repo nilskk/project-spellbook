@@ -1,35 +1,29 @@
 // Content script for Project Spellbook
-// This script runs on D&D Beyond pages and can modify the UI
+const pathname = new URL(window.location.href).pathname;
 
-console.log('Project Spellbook content script loaded');
-
-// Check if extension is enabled
-chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
-  if (response && response.enabled) {
-    initializeEnhancements();
-  }
-});
-
-// Listen for changes to extension enabled status
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'local' && changes.enabled) {
-    if (changes.enabled.newValue) {
-      initializeEnhancements();
-    } else {
-      removeEnhancements();
+if (/^\/characters\/\d+\/?$/.test(pathname)) {
+  const observer = new MutationObserver(() => {
+    const proficiencySection = document.querySelector('.ct-subsection.ct-subsection--proficiency-groups');
+    
+    if (proficiencySection && !proficiencySection.querySelector('.spellbook-toggle-btn')) {
+      const btn = document.createElement('button');
+      btn.className = 'spellbook-toggle-btn';
+      btn.textContent = 'Toggle Proficiency';
+      btn.style.cssText = 'display: block; margin: 10px 0; padding: 10px 15px; background: red; color: white; border: none; cursor: pointer;';
+      
+      const children = Array.from(proficiencySection.children);
+      btn.onclick = () => {
+        children.forEach(child => {
+          if (child !== btn) {
+            child.style.display = child.style.display === 'none' ? '' : 'none';
+          }
+        });
+      };
+      
+      proficiencySection.insertBefore(btn, proficiencySection.firstChild);
+      observer.disconnect();
     }
-  }
-});
-
-function initializeEnhancements() {
-  console.log('Initializing Project Spellbook enhancements');
+  });
   
-  // Add your UI modifications here
-  // Example: modify character sheet styling, add features, etc.
-  document.body.classList.add('project-spellbook-active');
-}
-
-function removeEnhancements() {
-  console.log('Removing Project Spellbook enhancements');
-  document.body.classList.remove('project-spellbook-active');
+  observer.observe(document.body, { childList: true, subtree: true });
 }

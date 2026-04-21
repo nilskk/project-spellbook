@@ -17,44 +17,56 @@ A Chrome Extension aiming to improve the D&D Beyond Character Tool UI.
 ```
 project-spellbook/
 ├── manifest.json          # Extension configuration (Manifest V3)
-├── popup.html            # Popup UI for the extension
-├── popup.js              # Popup functionality
-├── background.js         # Service Worker for background tasks
-├── content.js            # Content script for D&D Beyond pages
-├── styles.css            # Styling for popup and page modifications
-├── images/               # Extension icons directory
-│   ├── icon-16.png       # 16x16 icon
-│   ├── icon-48.png       # 48x48 icon
-│   └── icon-128.png      # 128x128 icon
-└── README.md             # This file
+├── background.js          # Service Worker for background tasks
+├── content.js             # Content script that shows info window on character pages
+├── styles.css             # Styling for popup and page modifications
+├── images/                # Extension icons directory (optional)
+│   └── README.md          # Icon placement guide
+└── README.md              # This file
 ```
 
 ## Features
 
-- **Popup UI**: Enable/disable enhancements and access settings
+- **Auto-Activation**: When visiting a D&D Beyond character page with ID (e.g., `/characters/50882753`), an info window automatically appears
 - **Service Worker**: Background operations and storage management
-- **Content Script**: Modifies D&D Beyond character tool UI
-- **Easy Toggle**: Simple enable/disable from popup
+- **Content Script**: Displays info window on valid character pages
+- **No Popup**: Simple, streamlined design with info window instead of popup UI
+
+## How It Works
+
+1. When you visit a character sheet page like `https://www.dndbeyond.com/characters/50882753/`
+2. The extension detects the valid URL pattern
+3. An info window appears in the top-right corner
+4. You can close the window by clicking the ✕ button
+
+The extension is enabled by default and only runs on character sheet pages.
 
 ## Development
 
 To make changes:
 
-1. Edit the relevant files (e.g., `content.js`, `styles.css`)
+1. Edit the relevant files (e.g., `content.js` to modify the info window)
 2. Go to `chrome://extensions/`
 3. Click the refresh button on the Project Spellbook extension
-4. Test your changes on D&D Beyond
+4. Navigate to a character sheet to see your changes
+
+### Customizing the Info Window
+
+Edit the `showInfoWindow()` function in [content.js](content.js) to:
+- Change the window position or size
+- Modify the content and styling
+- Add interactive features
 
 ## Permissions
 
 This extension requests:
 - **scripting**: To inject scripts into D&D Beyond
 - **activeTab**: To access the current tab
+- **storage**: To manage extension state
 - **host_permissions**: Read/modify pages on D&D Beyond
 
 ## Next Steps
 
-1. Add custom icons to the `images/` directory (16x16, 48x48, 128x128)
-2. Customize `content.js` with specific UI modifications
-3. Update `styles.css` with custom styling
-4. Test on D&D Beyond character tool pages
+1. Add custom content to the info window in `content.js`
+2. Implement character sheet enhancements
+3. Test on D&D Beyond character tool pages

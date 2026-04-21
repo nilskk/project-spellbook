@@ -5,27 +5,23 @@
   "description": "Enhance the UI of D&D Beyond character tool",
   "permissions": [
     "scripting",
-    "activeTab"
+    "activeTab",
+    "storage"
   ],
   "host_permissions": [
     "*://dndbeyond.com/*",
     "*://www.dndbeyond.com/*"
   ],
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "Project Spellbook"
-  },
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
       "matches": [
-        "*://dndbeyond.com/*",
-        "*://www.dndbeyond.com/*"
+        "*://dndbeyond.com/characters/*",
+        "*://www.dndbeyond.com/characters/*"
       ],
-      "js": ["content.js"],
-      "css": ["styles.css"]
+      "js": ["content.js"]
     }
   ]
 }
