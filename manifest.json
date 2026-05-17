@@ -12,6 +12,9 @@
     "*://dndbeyond.com/*",
     "*://www.dndbeyond.com/*"
   ],
+  "action": {
+    "default_popup": "popup.html"
+  },
   "content_scripts": [
     {
       "matches": [
@@ -20,6 +23,12 @@
       ],
       "js": ["content.js"],
       "css": ["styles.css"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": ["*://dndbeyond.com/*", "*://www.dndbeyond.com/*"]
     }
   ]
 }

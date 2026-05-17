@@ -9,9 +9,11 @@
   const SIDEBAR_HTML_KEY = 'spellbook_sidebar_html_' + characterId;
   const SIDEBAR_STATE_KEY = 'spellbook_sidebar_open_' + characterId;
   const SIDEBAR_WIDTH_KEY = 'spellbook_sidebar_width_' + characterId;
+  const CRIT_SETTINGS_KEY = 'spellbook_crit_settings_global';
 
   const pinned = new Set();
   let sidebarWidth = 280;
+  let critMode = 'normal';
   const sidebarPinned = new Set();
   let sidebarHtml = {};
   const originals = new WeakMap();
@@ -58,6 +60,35 @@
       const r = await chrome.storage.local.get(SIDEBAR_WIDTH_KEY);
       sidebarWidth = r[SIDEBAR_WIDTH_KEY] || 280;
     } catch (e) { sidebarWidth = 280; }
+  }
+
+  async function loadCritSettings() {
+    try {
+      const r = await chrome.storage.local.get(CRIT_SETTINGS_KEY);
+      if (r[CRIT_SETTINGS_KEY]) {
+        critMode = r[CRIT_SETTINGS_KEY].critMode || 'normal';
+      }
+    } catch (e) {}
+  }
+
+  function injectPageScript() {
+    if (document.getElementById('spellbook-injected-script')) return;
+    const script = document.createElement('script');
+    script.id = 'spellbook-injected-script';
+    script.src = chrome.runtime.getURL('injected.js');
+    (document.head || document.documentElement).appendChild(script);
+  }
+
+  function sendCritSettings() {
+    window.postMessage({
+      type: 'SPELLBOOK_CRIT_SETTINGS',
+      settings: { critMode: critMode }
+    }, '*');
+  }
+
+  function applyCritMode(mode) {
+    critMode = mode;
+    sendCritSettings();
   }
 
   function isSnippet(el) {
@@ -462,7 +493,23 @@
     await load();
     await loadSidebar();
     await loadSidebarWidth();
+    await loadCritSettings();
     await loadSidebarState();
+    injectPageScript();
     sync();
   })();
+
+  window.addEventListener('message', function (event) {
+    if (event.source !== window) return;
+    if (event.data && event.data.type === 'SPELLBOOK_REQUEST_SETTINGS') {
+      sendCritSettings();
+    }
+  });
+
+  chrome.storage.onChanged.addListener(function (changes, area) {
+    if (area !== 'local') return;
+    if (changes[CRIT_SETTINGS_KEY]) {
+      applyCritMode(changes[CRIT_SETTINGS_KEY].newValue.critMode || 'normal');
+    }
+  });
 })();
