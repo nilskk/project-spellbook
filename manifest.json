@@ -12,16 +12,14 @@
     "*://dndbeyond.com/*",
     "*://www.dndbeyond.com/*"
   ],
-  "background": {
-    "service_worker": "background.js"
-  },
   "content_scripts": [
     {
       "matches": [
         "*://dndbeyond.com/characters/*",
         "*://www.dndbeyond.com/characters/*"
       ],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "css": ["styles.css"]
     }
   ]
 }
