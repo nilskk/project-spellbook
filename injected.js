@@ -14,7 +14,14 @@
   });
   window.postMessage({ type: 'SPELLBOOK_REQUEST_SETTINGS' }, '*');
 
-  // Return the maximum face value for a given die type (d4→4, d8→8, etc.)
+  // Helper: generate a UUID-like id (same format D&D Beyond uses)
+  function uuid() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
   function maxFace(dieType) {
     var m = dieType.match(/d(\d+)/);
     return m ? parseInt(m[1], 10) : 0;
@@ -83,8 +90,12 @@
 
     for (var i = 0; i < rolls.length; i++) {
       var roll = rolls[i];
-      if (roll.rollKind !== 'critical hit') continue;
-
+      // Detects standard crits (rollKind="critical hit") and context-menu
+      // crits where DDB pre-doubles the dice but leaves rollKind undefined.
+      var isCrit = roll.rollKind === 'critical hit';
+      var isMenuCrit = roll.rollKind === undefined && roll.rollType === 'damage' && roll.diceNotation && roll.diceNotation.set &&
+        roll.diceNotation.set.some(function (s) { return s.count > 1 && s.count % 2 === 0; });
+      if (!isCrit && !isMenuCrit) continue;
       if (settings.critMode === 'disabled') {
         // Disabled: remove crit flag, halve everything back to base damage
         roll.rollKind = '';
@@ -144,11 +155,166 @@
     }
   }
 
-  // ─── Intercept D&D Beyond's WebSocket to modify outgoing dice messages ───
+  // Listen for custom roll requests from content script (context menu rolls)
+  window.addEventListener('message', function (event) {
+    if (event.source !== window) return;
+    if (event.data && event.data.type === 'SPELLBOOK_SEND_ROLL') {
+      sendCustomRoll(event.data);
+    }
+  });
+
+  function sendCustomRoll(opts) {
+    console.log('[Spellbook] Custom roll:', opts.notation, 'gameId:', opts.gameId, 'socket:', !!socket && socket.readyState);
+    if (!socket || socket.readyState !== 1) {
+      console.log('[Spellbook] Socket not ready');
+      return;
+    }
+    var rollId = uuid();
+    var now = Date.now();
+
+    // Parse notation: e.g. "1d4+8", "2d8+20"
+    var notation = opts.notation;
+    var diceSets = [];
+    var constant = 0;
+    notation.replace(/(\d+)d(\d+)/g, function (_, count, face) {
+      diceSets.push({ count: parseInt(count, 10), face: parseInt(face, 10) });
+    });
+    var constMatch = notation.match(/([+-]\d+)$/);
+    if (constMatch) constant = parseInt(constMatch[1], 10);
+
+    // Build dice array with placeholder values (pending)
+    var allDice = [];
+    for (var i = 0; i < diceSets.length; i++) {
+      for (var j = 0; j < diceSets[i].count; j++) {
+        allDice.push({ dieType: 'd' + diceSets[i].face, dieValue: 0 });
+      }
+    }
+
+    var pendingMsg = {
+      id: uuid(),
+      dateTime: String(now),
+      gameId: opts.gameId,
+      userId: opts.userId,
+      source: 'web',
+      data: {
+        action: opts.action || 'custom',
+        rolls: [{
+          diceNotation: {
+            set: [{
+              count: allDice.length,
+              dieType: 'd' + (diceSets[0] ? diceSets[0].face : 4),
+              dice: allDice,
+              operation: 0
+            }],
+            constant: constant
+          },
+          diceNotationStr: notation,
+          rollType: 'damage',
+          rollKind: ''
+        }],
+        context: {
+          entityId: opts.entityId,
+          entityType: 'character',
+          name: opts.characterName,
+          avatarUrl: opts.avatarUrl || '',
+          messageScope: 'gameId',
+          messageTarget: opts.gameId
+        },
+        setId: '00101',
+        rollId: rollId
+      },
+      entityId: opts.entityId,
+      entityType: 'character',
+      eventType: 'dice/roll/pending',
+      persist: false,
+      messageScope: 'gameId',
+      messageTarget: opts.gameId
+    };
+
+    // Roll actual values
+    var rolledValues = [];
+    for (var k = 0; k < allDice.length; k++) {
+      var face = diceSets[0] ? diceSets[0].face : 4;
+      var dieIdx = 0, remaining = 0;
+      for (var m = 0; m < diceSets.length; m++) {
+        if (k < remaining + diceSets[m].count) { face = diceSets[m].face; dieIdx = m; break; }
+        remaining += diceSets[m].count;
+      }
+      var val = Math.floor(Math.random() * face) + 1;
+      rolledValues.push(val);
+      allDice[k].dieValue = val;
+    }
+
+    var total = rolledValues.reduce(function (a, b) { return a + b; }, 0) + constant;
+    var text = rolledValues.join('+');
+    if (constant !== 0) text += (constant > 0 ? '+' : '') + constant;
+
+    var fulfilledMsg = {
+      id: uuid(),
+      dateTime: String(now + 1000),
+      gameId: opts.gameId,
+      userId: opts.userId,
+      source: 'web',
+      data: {
+        action: opts.action || 'custom',
+        rolls: [{
+          diceNotation: {
+            set: [{
+              count: allDice.length,
+              dieType: 'd' + (diceSets[0] ? diceSets[0].face : 4),
+              dice: allDice,
+              operation: 0
+            }],
+            constant: constant
+          },
+          diceNotationStr: notation,
+          rollType: 'damage',
+          rollKind: '',
+          result: {
+            constant: constant,
+            values: rolledValues,
+            total: total,
+            text: text
+          }
+        }],
+        context: {
+          entityId: opts.entityId,
+          entityType: 'character',
+          name: opts.characterName,
+          avatarUrl: opts.avatarUrl || '',
+          messageScope: 'gameId',
+          messageTarget: opts.gameId
+        },
+        setId: '00101',
+        rollId: rollId
+      },
+      entityId: opts.entityId,
+      entityType: 'character',
+      eventType: 'dice/roll/fulfilled',
+      persist: true,
+      messageScope: 'gameId',
+      messageTarget: opts.gameId
+    };
+
+    // Send pending + fulfilled via socket for game log
+    socket.send(JSON.stringify(pendingMsg));
+    console.log('[Spellbook] Sent pending, rollId:', rollId);
+
+    setTimeout(function () {
+      socket.send(JSON.stringify(fulfilledMsg));
+      console.log('[Spellbook] Sent fulfilled, rollId:', rollId);
+      // Dispatch fulfilled to broker so game log UI shows the result
+      var key = Symbol.for('@dndbeyond/message-broker-lib');
+      var broker = window[key];
+      if (broker) broker.dispatch(fulfilledMsg);
+    }, 800);
+  }
   var NativeWebSocket = window.WebSocket;
-  function interceptSocket() {
+  var socket = null;
+  function wrapSocket() {
     window.WebSocket = function () {
       var ws = new (Function.prototype.bind.apply(NativeWebSocket, [null].concat(Array.prototype.slice.call(arguments))))();
+      if (!socket) socket = ws;
       var originalSend = ws.send.bind(ws);
       ws.send = function (data) {
         try {
@@ -160,12 +326,15 @@
         } catch (e) {}
         return originalSend(data);
       };
-      ws.addEventListener('close', function () { interceptSocket(); });
+      ws.addEventListener('close', function () {
+        if (socket === ws) socket = null;
+        wrapSocket();
+      });
       window.WebSocket = NativeWebSocket;
       return ws;
     };
   }
-  interceptSocket();
+  wrapSocket();
 
   // ─── Intercept D&D Beyond's message broker to modify local UI payloads ───
   function interceptBroker() {

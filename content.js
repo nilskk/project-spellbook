@@ -14,6 +14,8 @@
   const pinned = new Set();
   let sidebarWidth = 280;
   let critMode = 'normal';
+  const diceBaseTexts = new WeakMap();
+  var lastCritMenuRewrite = '';
   const sidebarPinned = new Set();
   let sidebarHtml = {};
   const originals = new WeakMap();
@@ -89,6 +91,94 @@
   function applyCritMode(mode) {
     critMode = mode;
     sendCritSettings();
+    rewriteDiceNotations();
+  }
+
+  function rewriteDiceNotations() {
+    // Character sheet dice buttons
+    const containers = document.querySelectorAll('.integrated-dice__container');
+    containers.forEach(function (el) {
+      const label = el.querySelector('[class*="label"], [class*="notation"], [class*="value"]');
+      if (!label) return;
+      const currentText = (label.textContent || '').trim();
+      if (!/\d+d\d+/.test(currentText)) return;
+
+      if (!diceBaseTexts.has(el)) {
+        diceBaseTexts.set(el, currentText);
+        return;
+      }
+      const base = diceBaseTexts.get(el);
+
+      if (currentText !== base && critMode !== 'normal') {
+        var rewritten;
+        if (critMode === 'disabled') {
+          rewritten = base;
+        } else {
+          rewritten = rewritePerfectNotation(base);
+        }
+        if (rewritten !== currentText) {
+          label.textContent = rewritten;
+        }
+      }
+    });
+
+    // Context menu popup: "Crit Damage" option selected
+    var menu = document.querySelector('._9OLh5G_menu');
+    if (!menu || critMode === 'normal') return;
+    var critOptions = menu.querySelectorAll('._9OLh5G_dmgRollOption');
+    var critSelected = false;
+    for (var i = 0; i < critOptions.length; i++) {
+      if (critOptions[i].querySelector('._9OLh5G_check') &&
+          critOptions[i].textContent.indexOf('Crit') === 0) {
+        critSelected = true;
+        break;
+      }
+    }
+    if (!critSelected) return;
+    var notationSpan = menu.querySelector('._9OLh5G_diceNotation');
+    if (!notationSpan) return;
+    var critText = (notationSpan.textContent || '').trim();
+    if (!critText || !/\d+d\d+/.test(critText)) return;
+    if (critText === lastCritMenuRewrite) return;
+
+    // Halve the crit notation to get the base, then rewrite
+    var baseFromCrit = halveNotation(critText);
+    var rewritten;
+    if (critMode === 'disabled') {
+      rewritten = baseFromCrit;
+    } else {
+      rewritten = rewritePerfectNotation(baseFromCrit);
+    }
+    if (rewritten !== critText) {
+      notationSpan.textContent = rewritten;
+    }
+    lastCritMenuRewrite = rewritten;
+  }
+
+  function halveNotation(notation) {
+    return notation.replace(/(\d+)d/g, function (_, c) {
+      var count = parseInt(c, 10);
+      return (count > 1 ? Math.floor(count / 2) : count) + 'd';
+    });
+  }
+
+  // Parse base dice notation and apply perfect crit bonus: base dice stay as-is,
+  // max-face bonus is added to the constant (e.g. "2d8+4" → "2d8+20")
+  function rewritePerfectNotation(notation) {
+    var bonus = 0;
+    var parts = notation.replace(/(\d+)d(\d+)/g, function (_, count, face) {
+      var c = parseInt(count, 10);
+      bonus += c * parseInt(face, 10);
+      return count + 'd' + face;
+    });
+    var match = parts.match(/([+-]\d+)$/);
+    if (match) {
+      var oldConst = parseInt(match[1], 10);
+      var newConst = oldConst + bonus;
+      return parts.replace(/[+-]\d+$/, (newConst >= 0 ? '+' : '') + newConst);
+    }
+    if (bonus > 0) return parts + '+' + bonus;
+    return parts;
   }
 
   function isSnippet(el) {
@@ -483,6 +573,7 @@
         addSidebarButton(el);
       }
 
+      rewriteDiceNotations();
       updateVisibility();
     } finally {
       observer.observe(document.body, { childList: true, subtree: true });
@@ -499,6 +590,17 @@
     sync();
   })();
 
+  // Fast observer: rewrites dice notation text immediately when it changes
+  var rewriteTimer = null;
+  var fastCritObserver = new MutationObserver(function () {
+    if (rewriteTimer) return;
+    rewriteTimer = setTimeout(function () {
+      rewriteTimer = null;
+      rewriteDiceNotations();
+    }, 0);
+  });
+  fastCritObserver.observe(document.body, { characterData: true, subtree: true });
+
   window.addEventListener('message', function (event) {
     if (event.source !== window) return;
     if (event.data && event.data.type === 'SPELLBOOK_REQUEST_SETTINGS') {
@@ -512,4 +614,47 @@
       applyCritMode(changes[CRIT_SETTINGS_KEY].newValue.critMode || 'normal');
     }
   });
+
+  // Intercept context menu Roll button when Crit Damage is selected.
+  // The roll bypasses broker/WebSocket, so we send our own via injected.js.
+  document.addEventListener('click', function (e) {
+    if (critMode === 'normal') return;
+    var rollBtn = e.target.closest('._9OLh5G_rollButton');
+    if (!rollBtn) return;
+    var menu = rollBtn.closest('._9OLh5G_menu');
+    if (!menu) return;
+    var critOptions = menu.querySelectorAll('._9OLh5G_dmgRollOption');
+    var critSelected = false;
+    for (var i = 0; i < critOptions.length; i++) {
+      if (critOptions[i].querySelector('._9OLh5G_check') &&
+          critOptions[i].textContent.indexOf('Crit') === 0) {
+        critSelected = true;
+        break;
+      }
+    }
+    if (!critSelected) return;
+    var notationSpan = menu.querySelector('._9OLh5G_diceNotation');
+    if (!notationSpan) return;
+    var notation = (notationSpan.textContent || '').trim();
+    if (!notation || !/\d+d\d+/.test(notation)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    window.postMessage({
+      type: 'SPELLBOOK_SEND_ROLL',
+      notation: notation,
+      action: 'custom',
+      entityId: characterId,
+      userId: document.querySelector('#message-broker-client')?.getAttribute('data-userid') || '',
+      characterName: document.querySelector('[class*="characterName"]')?.innerText || '',
+      avatarUrl: document.querySelector('.ddbc-character-avatar__portrait')?.src || '',
+      gameId: document.querySelector('.ddbc-tooltip')?.firstChild?.href?.split('/')[4] || ''
+    }, '*');
+
+    setTimeout(function () {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    }, 50);
+  }, true);
 })();
