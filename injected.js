@@ -164,11 +164,7 @@
   });
 
   function sendCustomRoll(opts) {
-    console.log('[Spellbook] Custom roll:', opts.notation, 'gameId:', opts.gameId, 'socket:', !!socket && socket.readyState);
-    if (!socket || socket.readyState !== 1) {
-      console.log('[Spellbook] Socket not ready');
-      return;
-    }
+    if (!socket || socket.readyState !== 1) return;
     var rollId = uuid();
     var now = Date.now();
 
@@ -296,16 +292,17 @@
       messageTarget: opts.gameId
     };
 
-    // Send pending + fulfilled via socket for game log
-    socket.send(JSON.stringify(pendingMsg));
-    console.log('[Spellbook] Sent pending, rollId:', rollId);
+    // Deferred to broker triggers 3D dice. Must include result so worker can display it.
+    var deferredMsg = JSON.parse(JSON.stringify(fulfilledMsg));
+    deferredMsg.eventType = 'dice/roll/deferred';
+    var key = Symbol.for('@dndbeyond/message-broker-lib');
+    var broker = window[key];
+    if (broker) broker.dispatch(deferredMsg);
 
+    // Socket: pending (game log entry) + fulfilled (result) after delay
+    socket.send(JSON.stringify(pendingMsg));
     setTimeout(function () {
       socket.send(JSON.stringify(fulfilledMsg));
-      console.log('[Spellbook] Sent fulfilled, rollId:', rollId);
-      // Dispatch fulfilled to broker so game log UI shows the result
-      var key = Symbol.for('@dndbeyond/message-broker-lib');
-      var broker = window[key];
       if (broker) broker.dispatch(fulfilledMsg);
     }, 800);
   }
