@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Project Spellbook",
   "version": "1.0.0",
-  "description": "Enhance the UI of D&D Beyond character tool",
+  "description": "Enhance D&D Beyond character tool with pinning and more critical damage calculations.",
   "permissions": [
     "scripting",
     "activeTab",
